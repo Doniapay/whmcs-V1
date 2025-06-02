@@ -86,7 +86,7 @@ function doniapay_payment_url($params)
     $currency_rate = $params['currency_rate'];
     $invoiceId = $params['invoiceid'];
 
-    if ($params['currency'] == "BDT") {
+    if ($params['currency'] == "USD") {
         $amount = $params['amount'] * $currency_rate;
     } else {
         $amount = $params['amount'];
