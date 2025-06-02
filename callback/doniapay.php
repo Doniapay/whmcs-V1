@@ -1,86 +1,66 @@
 <?php
-    /* doniapay WHMCS Gateway
-     *
-     * Copyright (c) 2024 doniapay
-     * Website: https://doniapay.com
-     * Developer: doniapay LTD
-     */
-    
-    require_once __DIR__ . '/../../../init.php';
-    require_once __DIR__ . '/../../../includes/gatewayfunctions.php';
-    require_once __DIR__ . '/../../../includes/invoicefunctions.php';
-    
-    use WHMCS\Config\Setting;
+
+require_once __DIR__ . '/../../../init.php';
+require_once __DIR__ . '/../../../includes/gatewayfunctions.php';
+require_once __DIR__ . '/../../../includes/invoicefunctions.php';
+
+use WHMCS\Config\Setting;
+
+$invoiceId = $_REQUEST['invoice'];
+$transactionId = $_REQUEST['transactionId'];
+$paymentAmount = $_REQUEST['paymentAmount'];
+$paymentFee = $_REQUEST['paymentFee'];
+$gatewayModuleName = "doniapay";
+
+$transaction_id_doniapay = $transactionId;
+
+$data = array(
+    "transaction_id" => $transaction_id_doniapay,
+);
+
+$apikey = $_GET['api'];
+$secretkey = $_GET['secret'];
+$hostname = $_GET['host'];
+
+$header = array(
+    "api" => $apikey,
+    "url" => 'https://secure.doniapay.com/api/payment/verify',
+);
+
+$headers = array(
+    'Content-Type: application/json',
+    'donia-apikey: ' . $header['api'],
+);
 
 
-    $invoiceId = $_GET['invoice'];
-    $transactionId = $_GET['transactionId'];
-    $paymentAmount = $_GET['paymentAmount'];
-    $paymentFee = $_GET['paymentFee'];
-    $gatewayModuleName = "doniapay";
+$curl = curl_init();
+curl_setopt_array($curl, array(
+    CURLOPT_URL => $header['url'],
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_POSTFIELDS => json_encode($data),
+    CURLOPT_HTTPHEADER => $headers,
+    CURLOPT_FOLLOWLOCATION => true,
+));
 
+$response = curl_exec($curl);
+curl_close($curl);
 
-    $transaction_id_doniapay = $transactionId;
+$data = json_decode($response, true);
 
-    $data   = array(
-        "transaction_id"          => $transaction_id_doniapay,
+if ($data['status'] == "COMPLETED") {
+   
+    addInvoicePayment(
+        $invoiceId,
+        $transactionId,
+        $paymentAmount,
+        $paymentFee,
+        $gatewayModuleName
     );
-    $apikey = $_GET['api'];
-    $secretkey = $_GET['secret'];
-    $hostname = $_GET['host'];
 
-    $header   = array(
-        "api"               => $apikey,
-        "secret"            => $secretkey,
-        "position"          => $hostname,
-        "url"               => 'https://pay.doniapay.com/request/payment/verify',
-    );
-
-
-    $headers = array(
-        'Content-Type: application/x-www-form-urlencoded',
-        'app-key: ' . $header['api'],
-        'secret-key: ' . $header['secret'],
-        'host-name: ' . $header['position'],
-    );
-    $url = $header['url'];
-    $curl = curl_init();
-    $data = http_build_query($data);
     
-    curl_setopt_array($curl, array(
-        CURLOPT_URL => $url,
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_ENCODING => '',
-        CURLOPT_MAXREDIRS => 10,
-        CURLOPT_TIMEOUT => 0,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-        CURLOPT_CUSTOMREQUEST => 'POST',
-        CURLOPT_POSTFIELDS => $data,
-        CURLOPT_HTTPHEADER => $headers,
-        CURLOPT_VERBOSE =>true
-    ));
-     
-    $response = curl_exec($curl);
-    curl_close($curl);
-    $data = json_decode($response,true);
-    
-    if($data['status'] == 1){
-        addInvoicePayment(
-            $invoiceId,
-            $transactionId,
-            $paymentAmount,
-            $paymentFee,
-            $gatewayModuleName
-        );
-        
-        $systemUrl = Setting::getValue('SystemURL');
-?>
-        <script>
-            location.href="<?php echo $systemUrl . '/viewinvoice.php?id=' . $invoiceId;?>";
-        </script>
-<?php
-    }else{
-        echo "Failed. Id Not Match";
-    }
+    $systemUrl = Setting::getValue('SystemURL');
+    echo '<script>location.href = "' . $systemUrl . '/viewinvoice.php?id=' . $invoiceId . '";</script>';
+} else {
+    echo "Failed. ID Not Match or Payment Verification Failed.";
+}
 ?>
