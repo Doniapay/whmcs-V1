@@ -24,7 +24,7 @@ $hostname = $_GET['host'];
 
 $header = array(
     "api" => $apikey,
-    "url" => 'https://secure.doniapay.com/api/payment/verify',
+    "url" => 'https://payment.doniapay.com/api/payment/verify',
 );
 
 $headers = array(
