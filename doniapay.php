@@ -119,7 +119,7 @@ function doniapay_payment_url($params)
 
     $ch = curl_init();
     curl_setopt_array($ch, array(
-        CURLOPT_URL => 'https://secure.doniapay.com/api/payment/create',
+        CURLOPT_URL => 'https://payment.doniapay.com/api/payment/create',
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST => true,
         CURLOPT_POSTFIELDS => json_encode($data),
