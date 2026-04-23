@@ -6,61 +6,76 @@ require_once __DIR__ . '/../../../includes/invoicefunctions.php';
 
 use WHMCS\Config\Setting;
 
-$invoiceId = $_REQUEST['invoice'];
-$transactionId = $_REQUEST['transactionId'];
-$paymentAmount = $_REQUEST['paymentAmount'];
-$paymentFee = $_REQUEST['paymentFee'];
 $gatewayModuleName = "doniapay";
+$gatewayParams = getGatewayVariables($gatewayModuleName);
 
-$transaction_id_doniapay = $transactionId;
+if (!$gatewayParams['type']) {
+    die("Module Not Activated");
+}
 
-$data = array(
-    "transaction_id" => $transaction_id_doniapay,
-);
+// Doniapay typically returns 'ids' as transaction id and 'invoice' via GET/POST
+$invoiceId = $_REQUEST['invoice'];
+$transactionId = $_REQUEST['ids'] ?: $_REQUEST['transactionId'];
 
-$apikey = $_GET['api'];
-$secretkey = $_GET['secret'];
-$hostname = $_GET['host'];
+if (!$transactionId || !$invoiceId) {
+    die("Invalid Request");
+}
 
-$header = array(
-    "api" => $apikey,
-    "url" => 'https://payment.doniapay.com/api/payment/verify',
+$apiKey = $gatewayParams['apiKey'];
+$apiUrl = 'https://api.doniapay.com/order/synchronize/confirm';
+
+$postData = array(
+    "transaction_id" => $transactionId,
 );
 
 $headers = array(
     'Content-Type: application/json',
-    'donia-apikey: ' . $header['api'],
+    'X-Signature-Key: ' . $apiKey,
 );
-
 
 $curl = curl_init();
 curl_setopt_array($curl, array(
-    CURLOPT_URL => $header['url'],
+    CURLOPT_URL => $apiUrl,
     CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_POSTFIELDS => json_encode($data),
+    CURLOPT_POST => true,
+    CURLOPT_POSTFIELDS => json_encode($postData),
     CURLOPT_HTTPHEADER => $headers,
-    CURLOPT_FOLLOWLOCATION => true,
+    CURLOPT_SSL_VERIFYPEER => false,
+    CURLOPT_TIMEOUT => 30,
 ));
 
 $response = curl_exec($curl);
+$curlError = curl_error($curl);
 curl_close($curl);
+
+if ($curlError) {
+    die("CURL Error: " . $curlError);
+}
 
 $data = json_decode($response, true);
 
-if ($data['status'] == "COMPLETED") {
-   
+// New API Success Status is 'Paid'
+if (isset($data['status']) && $data['status'] == "Paid") {
+    
+    // Check if transaction already exists in WHMCS
+    checkCbTransID($transactionId);
+    
+    // Add payment to invoice
+    // Note: $data['amount'] returns the actual paid amount from gateway
     addInvoicePayment(
         $invoiceId,
         $transactionId,
-        $paymentAmount,
-        $paymentFee,
+        $data['amount'], // Real amount from API
+        0,               // Payment Fee
         $gatewayModuleName
     );
 
-    
+    logTransaction($gatewayParams['name'], $response, "Successful");
+
     $systemUrl = Setting::getValue('SystemURL');
-    echo '<script>location.href = "' . $systemUrl . '/viewinvoice.php?id=' . $invoiceId . '";</script>';
+    header("Location: " . $systemUrl . "viewinvoice.php?id=" . $invoiceId);
+    exit;
 } else {
-    echo "Failed. ID Not Match or Payment Verification Failed.";
+    logTransaction($gatewayParams['name'], $response, "Unsuccessful");
+    echo "Payment verification failed. Status: " . ($data['status'] ?? 'Unknown');
 }
-?>
