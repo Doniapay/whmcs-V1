@@ -1,6 +1,5 @@
 <?php
 
-
 if (!defined("WHMCS")) {
     die("This file cannot be accessed directly");
 }
@@ -8,131 +7,122 @@ if (!defined("WHMCS")) {
 function doniapay_MetaData()
 {
     return array(
-        'DisplayName' => 'doniapay',
-        'APIVersion' => '1.0',
+        'DisplayName' => 'Doniapay',
+        'APIVersion' => '1.1',
         'DisableLocalCredtCardInput' => true,
         'TokenisedStorage' => false,
     );
 }
-
-
-
-
-function doniapay_link($params)
-{
-    $host_config = $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'];
-    $host_config = pathinfo($host_config, PATHINFO_FILENAME);
-
-    if (isset($_POST['pay'])) {
-        $response = doniapay_payment_url($params);
-        if ($response->status) {
-            return '<form action="' . $response->payment_url . ' " method="GET">
-            <input class="btn btn-primary" type="submit" value="' . $params['langpaynow'] . '" />
-            </form>';
-        }
-
-        return $response->message;
-    }
-
-
-    if ($host_config == "viewinvoice") {
-        return '<form action="" method="POST">
-        <input class="btn btn-primary" name="pay" type="submit" value="' . $params['langpaynow'] . '" />
-        </form>';
-    } else {
-        $response = doniapay_payment_url($params);
-        if ($response->status) {
-            return '<form action="' . $response->payment_url . ' " method="GET">
-            <input class="btn btn-primary" type="submit" value="' . $params['langpaynow'] . '" />
-            </form>';
-        }
-
-        return $response->message;
-    }
-}
-
 
 function doniapay_config()
 {
     return array(
         'FriendlyName' => array(
             'Type' => 'System',
-            'Value' => 'doniapay',
+            'Value' => 'Doniapay',
         ),
         'apiKey' => array(
             'FriendlyName' => 'API Key',
             'Type' => 'text',
             'Size' => '150',
             'Default' => '',
-            'Description' => 'Enter Your Api Key',
+            'Description' => 'Enter Your Doniapay Api Key',
         ),
-
         'currency_rate' => array(
-            'FriendlyName' => 'Currency Rate',
+            'FriendlyName' => 'USD Conversion Rate',
             'Type' => 'text',
-            'Size' => '150',
-            'Default' => '85',
-            'Description' => 'Enter Dollar Rate',
+            'Size' => '50',
+            'Default' => '115',
+            'Description' => '1 USD = How much BDT? (e.g. 115)',
         )
     );
 }
 
-function doniapay_payment_url($params)
+function doniapay_link($params)
 {
-    $cus_name = $params['clientdetails']['firstname'] . " " . $params['clientdetails']['lastname'];
-    $cus_email = $params['clientdetails']['email'];
-
-    $apikey = $params['apiKey'];
-    $currency_rate = $params['currency_rate'];
-    $invoiceId = $params['invoiceid'];
-
-    if ($params['currency'] == "USD") {
-        $amount = $params['amount'] * $currency_rate;
-    } else {
-        $amount = $params['amount'];
+    // Invoice view logic
+    if (isset($_POST['pay_doniapay'])) {
+        $response = doniapay_payment_url($params);
+        if ($response->status) {
+            header("Location: " . $response->payment_url);
+            exit;
+        }
+        return '<div class="alert alert-danger">' . $response->message . '</div>';
     }
 
-    if (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on')
-        $url = "https://";
-    else
-        $url = "http://";
-    $url .= $_SERVER['HTTP_HOST'];
-    $systemUrl = $url;
+    return '<form action="" method="POST">
+                <input type="hidden" name="pay_doniapay" value="true" />
+                <input class="btn btn-primary" type="submit" value="' . $params['langpaynow'] . '" />
+            </form>';
+}
 
-    $webhook_url = $systemUrl . '/modules/gateways/callback/doniapay.php?api=' . $apikey . '&invoice=' . $invoiceId;
-    $success_url = $systemUrl . '/viewinvoice.php?id=' . $invoiceId;
-    $cancel_url = $systemUrl . '/viewinvoice.php?id=' . $invoiceId;
+function doniapay_payment_url($params)
+{
+    $apiKey = $params['apiKey'];
+    $currencyRate = $params['currency_rate'];
+    $invoiceId = $params['invoiceid'];
+    $amount = $params['amount'];
 
-    $data = array(
-        "cus_name"      => $cus_name,
-        "cus_email"     => $cus_email,
-        "amount"        => $amount,
-        "webhook_url"   => $webhook_url,
-        "success_url"   => $success_url,
-        "cancel_url"    => $cancel_url,
+    // Currency Conversion
+    if ($params['currency'] == "USD") {
+        $amount = $amount * $currencyRate;
+    }
+
+    $systemUrl = $params['systemurl'];
+    $successUrl = $params['returnurl'];
+    $cancelUrl = $params['returnurl'];
+    $webhookUrl = $systemUrl . 'modules/gateways/callback/doniapay.php';
+
+    $cusName = $params['clientdetails']['firstname'] . " " . $params['clientdetails']['lastname'];
+    $cusEmail = $params['clientdetails']['email'];
+
+    // New API Raw Data Format
+    $rawData = array(
+        "dn_su"  => $successUrl,
+        "dn_cu"  => $cancelUrl,
+        "dn_wu"  => $webhookUrl,
+        "dn_am"  => round($amount, 2),
+        "dn_cn"  => $cusName,
+        "dn_ce"  => $cusEmail,
+        "dn_mt"  => json_encode(array("invoice_id" => $invoiceId)),
+        "dn_rt"  => "GET"
     );
 
-    $headers = array(
-        'Content-Type: application/json',
-        'donia-apikey: ' . $apikey,
-    );
+    // Payload & Signature Generation
+    $payload = base64_encode(json_encode($rawData));
+    $signature = hash_hmac('sha256', $payload, $apiKey);
+
+    $apiEndpoint = 'https://api.doniapay.com/order/synchronize/prepare';
 
     $ch = curl_init();
     curl_setopt_array($ch, array(
-        CURLOPT_URL => 'https://payment.doniapay.com/api/payment/create',
+        CURLOPT_URL => $apiEndpoint,
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => json_encode($data),
-        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_POSTFIELDS => json_encode(array('dp_payload' => $payload)),
+        CURLOPT_HTTPHEADER => array(
+            'Content-Type: application/json',
+            'X-Signature-Key: ' . $apiKey,
+            'donia-signature: ' . $signature
+        ),
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_TIMEOUT => 30
     ));
 
     $response = curl_exec($ch);
+    $curlError = curl_error($ch);
     curl_close($ch);
+
+    if ($curlError) {
+        return (object)[
+            'status' => false,
+            'message' => 'Connection Error: ' . $curlError
+        ];
+    }
 
     $res = json_decode($response, true);
 
-
-    if (!empty($res['status']) && !empty($res['payment_url'])) {
+    if (isset($res['status']) && $res['status'] == 'success') {
         return (object)[
             'status' => true,
             'payment_url' => $res['payment_url']
@@ -140,8 +130,7 @@ function doniapay_payment_url($params)
     } else {
         return (object)[
             'status' => false,
-            'message' => $res['message'] ?? 'Unable to generate payment URL.'
+            'message' => $res['message'] ?? 'Gateway Error: Unable to initiate payment.'
         ];
     }
 }
-
