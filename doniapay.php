@@ -8,7 +8,7 @@ function doniapay_MetaData()
 {
     return array(
         'DisplayName' => 'Doniapay',
-        'APIVersion' => '1.1',
+        'APIVersion' => '2.0',
         'DisableLocalCredtCardInput' => true,
         'TokenisedStorage' => false,
     );
@@ -92,7 +92,7 @@ function doniapay_payment_url($params)
     $payload = base64_encode(json_encode($rawData));
     $signature = hash_hmac('sha256', $payload, $apiKey);
 
-    $apiEndpoint = 'https://api.doniapay.com/order/synchronize/prepare';
+    $apiEndpoint = 'https://api.doniapay.com/v2/order/synchronize/prepare';
 
     $ch = curl_init();
     curl_setopt_array($ch, array(
