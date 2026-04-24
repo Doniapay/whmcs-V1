@@ -22,7 +22,7 @@ if (!$transactionId || !$invoiceId) {
 }
 
 $apiKey = $gatewayParams['apiKey'];
-$apiUrl = 'https://api.doniapay.com/order/synchronize/confirm';
+$apiUrl = 'https://api.doniapay.com/v2/order/synchronize/confirm';
 
 $postData = array(
     "transaction_id" => $transactionId,
